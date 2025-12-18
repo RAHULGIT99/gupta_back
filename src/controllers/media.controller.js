@@ -198,7 +198,7 @@ const summarizeFile = async (req, res) => {
       return res.status(400).send('No text could be extracted from the file');
     }
 
-    // Limit text length to avoid token limits (Gemini has a context window)
+    // Limit text length to avoid token limits (LLM has a context window)
     const maxLength = 15000; // Adjust based on model's token limit
     if (extractedText.length > maxLength) {
       extractedText = extractedText.substring(0, maxLength) + '...';

@@ -3,62 +3,49 @@
  * This file contains the AI service functions for the application
  */
 
-const { GoogleGenerativeAI } = require("@google/generative-ai");
+const axios = require("axios");
 const systemInstructions = require("../config/systemInstructions");
 
-// Initialize Google Generative AI
-const genAI = new GoogleGenerativeAI(process.env.GOOGLE_GEMINI_API_KEY);
+const apiKey = process.env.GROQ_API_KEY;
 
-// Create AI models with system instructions
-const codeOptimiser = genAI.getGenerativeModel({
-    model: "gemini-2.0-flash",
-    systemInstruction: systemInstructions.codeOptimizer
-});
+if (!apiKey) {
+    throw new Error("Missing Groq API key. Set GROQ_API_KEY in your environment.");
+}
 
-const codeGenerator = genAI.getGenerativeModel({
-    model: "gemini-2.0-flash",
-    systemInstruction: systemInstructions.codeGenerator
-});
+const modelName = "llama-3.3-70b-versatile";
+const url = "https://api.groq.com/openai/v1/chat/completions";
 
-const codeComplexity = genAI.getGenerativeModel({
-    model: "gemini-2.0-flash",
-    systemInstruction: systemInstructions.codeComplexity
-});
+/**
+ * Send a single-turn prompt using a specific system instruction.
+ * @param {string} systemInstruction
+ * @param {string} userPrompt
+ * @param {object} options
+ * @param {boolean} [options.clean] - whether to apply response sanitisation
+ * @returns {Promise<string>}
+ */
+async function sendPrompt(systemInstruction, userPrompt, { clean = true } = {}) {
+    try {
+        const response = await axios.post(url, {
+            model: modelName,
+            messages: [
+                { role: "system", content: systemInstruction },
+                { role: "user", content: userPrompt }
+            ],
+            temperature: 0.7
+        }, {
+            headers: {
+                "Authorization": `Bearer ${apiKey}`,
+                "Content-Type": "application/json"
+            }
+        });
 
-const codeComparer = genAI.getGenerativeModel({
-    model: "gemini-2.0-flash",
-    systemInstruction: systemInstructions.codeComparer
-});
-
-const testCaseGenerator = genAI.getGenerativeModel({
-    model: "gemini-2.0-flash",
-    systemInstruction: systemInstructions.testCaseGenerator
-});
-
-const codeBeautifier = genAI.getGenerativeModel({
-    model: "gemini-2.0-flash",
-    systemInstruction: systemInstructions.codeBeautifier
-});
-
-const errorDebugger = genAI.getGenerativeModel({
-    model: "gemini-2.0-flash",
-    systemInstruction: systemInstructions.errorDebugger
-});
-
-const performanceAnalyzer = genAI.getGenerativeModel({
-    model: "gemini-2.0-flash",
-    systemInstruction: systemInstructions.performanceAnalyzer
-});
-
-const contentSummarizer = genAI.getGenerativeModel({
-    model: "gemini-2.0-flash",
-    systemInstruction: systemInstructions.contentSummarizer
-});
-
-const securityAnalyzer = genAI.getGenerativeModel({
-    model: "gemini-2.0-flash",
-    systemInstruction: systemInstructions.securityAnalyzer
-});
+        const text = response.data.choices[0].message.content.trim();
+        return clean ? cleanAIResponse(text) : text;
+    } catch (error) {
+        console.error("Error calling Groq API:", error.response ? error.response.data : error.message);
+        throw error;
+    }
+}
 
 /**
  * Generate code based on a prompt
@@ -67,9 +54,10 @@ const securityAnalyzer = genAI.getGenerativeModel({
  * @returns {Promise<string>} - The generated code
  */
 async function generateCode(prompt, lang) {
-    const result = await codeGenerator.generateContent(prompt, lang);
-    const rawResponse = result.response.text();
-    return cleanAIResponse(rawResponse);
+    const userPrompt = lang
+        ? `${prompt}\n\nPreferred language: ${lang}`
+        : prompt;
+    return sendPrompt(systemInstructions.codeGenerator, userPrompt);
 }
 
 /**
@@ -104,9 +92,7 @@ function cleanAIResponse(response) {
  * @returns {Promise<string>} - The review
  */
 async function generateReview(prompt) {
-    const result = await codeOptimiser.generateContent(prompt);
-    const rawResponse = result.response.text();
-    return cleanAIResponse(rawResponse);
+    return sendPrompt(systemInstructions.codeOptimizer, prompt);
 }
 
 /**
@@ -115,9 +101,7 @@ async function generateReview(prompt) {
  * @returns {Promise<string>} - The complexity analysis
  */
 async function generateComplexity(prompt) {
-    const result = await codeComplexity.generateContent(prompt);
-    const rawResponse = result.response.text();
-    return cleanAIResponse(rawResponse);
+    return sendPrompt(systemInstructions.codeComplexity, prompt);
 }
 
 /**
@@ -143,9 +127,7 @@ ${code2}
 Focus only on identifying critical logical errors, syntax errors, or bugs that would cause the code to fail.
 Provide a line-by-line analysis of the errors with brief explanations.`;
 
-    const result = await codeComparer.generateContent(prompt);
-    const rawResponse = result.response.text();
-    return cleanAIResponse(rawResponse);
+    return sendPrompt(systemInstructions.codeComparer, prompt);
 }
 
 /**
@@ -163,9 +145,7 @@ ${code}
 
 Please provide a variety of test cases including normal cases, edge cases, and error cases.`;
 
-    const result = await testCaseGenerator.generateContent(prompt);
-    const rawResponse = result.response.text();
-    return cleanAIResponse(rawResponse);
+    return sendPrompt(systemInstructions.testCaseGenerator, prompt);
 }
 
 /**
@@ -183,8 +163,7 @@ ${code}
 
 Please maintain the original functionality while making it more readable and well-structured.`;
 
-    const result = await codeBeautifier.generateContent(prompt);
-    return result.response.text();
+    return sendPrompt(systemInstructions.codeBeautifier, prompt, { clean: false });
 }
 
 /**
@@ -202,8 +181,7 @@ ${code}
 
 Please provide a detailed analysis of any errors found and suggest fixes.`;
 
-    const result = await errorDebugger.generateContent(prompt);
-    return result.response.text();
+    return sendPrompt(systemInstructions.errorDebugger, prompt, { clean: false });
 }
 
 /**
@@ -221,8 +199,7 @@ ${code}
 
 Please provide a detailed analysis of time complexity, space complexity, and suggest optimizations.`;
 
-    const result = await performanceAnalyzer.generateContent(prompt);
-    return result.response.text();
+    return sendPrompt(systemInstructions.performanceAnalyzer, prompt, { clean: false });
 }
 
 /**
@@ -241,8 +218,7 @@ ${content}
 
 Please provide a ${summaryLength} summary in ${summaryType} style.`;
 
-    const result = await contentSummarizer.generateContent(prompt);
-    return result.response.text();
+    return sendPrompt(systemInstructions.contentSummarizer, prompt, { clean: false });
 }
 
 
@@ -261,8 +237,7 @@ ${code}
 
 Please provide a detailed security analysis including vulnerability types, severity levels, line numbers, and recommended fixes.`;
 
-    const result = await securityAnalyzer.generateContent(prompt);
-    return result.response.text();
+    return sendPrompt(systemInstructions.securityAnalyzer, prompt, { clean: false });
 }
 
 module.exports = {
